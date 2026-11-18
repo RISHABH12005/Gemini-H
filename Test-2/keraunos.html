@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Keraunos — Real-Time Lightning &amp; Generative Ambient Globe</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #04060c;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      user-select: none;
+    }
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .glass-panel {
+      background: rgba(8, 12, 22, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.7);
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(148, 163, 184, 0.18);
+      height: 4px;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #7dd3fc;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(125, 211, 252, 0.7);
+      transition: transform 0.15s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 13px;
+      height: 13px;
+      border: none;
+      border-radius: 50%;
+      background: #7dd3fc;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(125, 211, 252, 0.7);
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.75; }
+      70% { transform: scale(1.35); opacity: 0; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
+    .status-pulse::before {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 9999px;
+      background: currentColor;
+      animation: pulse-ring 2.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+    }
+    #globe-container canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    #globe-container canvas:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body class="relative overflow-hidden">
+
+  <!-- 3D Globe Viewport -->
+  <div id="globe-container" class="fixed inset-0 z-0"></div>
+
+  <!-- Subtle Radial Vignette -->
+  <div class="pointer-events-none fixed inset-0 z-10 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(3,5,10,0.68)_100%)]"></div>
+
+  <!-- Initial Audio Gesture Overlay -->
+  <div id="audio-start-overlay" class="fixed inset-0 z-40 flex items-center justify-center bg-[#04060c]/60 backdrop-blur-sm transition-opacity duration-500">
+    <div class="glass-panel mx-4 max-w-md rounded-2xl p-6 text-center">
+      <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30">
+        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <h1 class="text-lg font-medium tracking-tight text-slate-100">Keraunos Observatory</h1>
+      <p class="mt-2 text-xs leading-relaxed text-slate-400">
+        Real-time lightning discharges across Earth are mapped by latitude, longitude, and polarity into a generative Web Audio soundscape.
+      </p>
+      <button id="btn-enter-audio" type="button" class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400/90 px-5 py-2.5 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-300 active:scale-[0.99]">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+        </svg>
+        Enable Audio &amp; Observe
+      </button>
+      <button id="btn-enter-silent" type="button" class="mt-2.5 w-full rounded-xl py-1.5 text-xs text-slate-400 transition hover:text-slate-200">
+        Continue muted
+      </button>
+    </div>
+  </div>
+
+  <!-- Top HUD Bar -->
+  <header class="pointer-events-none fixed inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-3 p-3 sm:p-5">
+    <!-- Top-Left: Brand & Stream Status -->
+    <div class="pointer-events-auto glass-panel flex flex-col gap-2 rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium tracking-wide text-slate-100 sm:text-base">KERAUNOS</span>
+          <span class="hidden text-[11px] uppercase tracking-widest text-slate-500 sm:inline">Blitzortung + Web Audio</span>
+        </div>
+        <div class="h-3.5 w-px bg-slate-700/70"></div>
+        <button id="btn-source-mode" type="button" title="Cycle data source (Live Blitzortung / Simulated / Storm Surge)" class="group flex items-center gap-2 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-slate-300 ring-1 ring-slate-700/70 transition hover:ring-sky-400/50">
+          <span id="status-dot" class="status-pulse relative h-2 w-2 rounded-full bg-amber-400 text-amber-400"></span>
+          <span id="status-label">Connecting…</span>
+        </button>
+      </div>
+      <div class="font-mono-tech flex items-center gap-4 text-[11px] text-slate-400">
+        <div>STRIKES <span id="stat-total" class="ml-1 text-slate-100">0</span></div>
+        <div>RATE <span id="stat-rate" class="ml-1 text-sky-300">0</span><span class="text-slate-500">/min</span></div>
+        <div id="stat-note-wrap" class="hidden sm:block">LAST <span id="stat-last-note" class="ml-1 text-indigo-300">—</span></div>
+      </div>
+    </div>
+
+    <!-- Top-Right: Quick Actions -->
+    <div class="pointer-events-auto flex flex-wrap items-center gap-2">
+      <button id="btn-storm-burst" type="button" class="glass-panel flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-sky-400/40 hover:text-sky-200 active:scale-95" title="Trigger a cluster of strikes">
+        <svg class="h-3.5 w-3.5 text-sky-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <span class="hidden sm:inline">Storm Burst</span>
+      </button>
+
+      <button id="btn-auto-rotate" type="button" aria-pressed="true" class="glass-panel flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-sky-300 border-sky-400/30 transition hover:border-sky-400/50 active:scale-95" title="Toggle globe auto-rotation">
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span class="hidden md:inline">Orbit</span>
+      </button>
+
+      <button id="btn-audio-toggle" type="button" aria-pressed="false" class="glass-panel flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:border-sky-400/40 active:scale-95">
+        <span id="audio-icon-off" class="flex items-center gap-1.5 text-slate-400">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+          <span>Muted</span>
+        </span>
+        <span id="audio-icon-on" class="hidden items-center gap-1.5 text-sky-300">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <span>Audio On</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Bottom HUD -->
+  <footer class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col-reverse items-stretch justify-between gap-3 p-3 sm:flex-row sm:items-end sm:p-5">
+
+    <!-- Bottom-Left: Ambient Synth Controls -->
+    <div class="pointer-events-auto glass-panel w-full rounded-2xl sm:w-80">
+      <div class="flex items-center justify-between px-4 py-2.5">
+        <span class="text-[11px] font-medium uppercase tracking-widest text-slate-400">Soundscape Engine</span>
+        <button id="btn-toggle-synth" type="button" class="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 transition hover:bg-slate-800 hover:text-slate-200">
+          Hide
+        </button>
+      </div>
+      <div id="synth-panel-body" class="space-y-3 border-t border-slate-800/80 px-4 py-3 text-xs">
+        <div class="grid grid-cols-2 gap-2.5">
+          <label class="flex flex-col gap-1">
+            <span class="text-[10px] uppercase tracking-wider text-slate-500">Scale</span>
+            <select id="select-scale" class="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-400/60">
+              <option value="pentatonic">Pentatonic Minor</option>
+              <option value="dorian">Dorian Mode</option>
+              <option value="lydian" selected>Lydian Dream</option>
+              <option value="hirajoshi">Hirajoshi</option>
+              <option value="quartal">Quartal Ambient</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-[10px] uppercase tracking-wider text-slate-500">Root Key</span>
+            <select id="select-root" class="rounded-lg border border-slate-700/70 bg-slate-900/80 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-400/60">
+              <option value="48">C3</option>
+              <option value="50" selected>D3</option>
+              <option value="51">Eb3</option>
+              <option value="53">F3</option>
+              <option value="55">G3</option>
+              <option value="56">Ab3</option>
+              <option value="58">Bb3</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-slate-400">Hall Reverb</span>
+            <span id="val-reverb" class="font-mono-tech text-[11px] text-sky-300">68%</span>
+          </div>
+          <input id="slider-reverb" type="range" min="0" max="100" value="68" class="w-full" />
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-slate-400">Harmonic Drone</span>
+            <span id="val-drone" class="font-mono-tech text-[11px] text-sky-300">35%</span>
+          </div>
+          <input id="slider-drone" type="range" min="0" max="100" value="35" class="w-full" />
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <button id="btn-thunder" type="button" aria-pressed="true" class="flex items-center gap-1.5 rounded-lg border border-sky-400/35 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200 transition hover:bg-sky-500/20">
+            <span class="h-1.5 w-1.5 rounded-full bg-sky-300"></span>
+            Thunder Swell
+          </button>
+          <button id="btn-quantize" type="button" aria-pressed="false" class="flex items-center gap-1.5 rounded-lg border border-slate-700/70 bg-slate-900/60 px-2.5 py-1 text-[11px] text-slate-400 transition hover:text-slate-200">
+            <span class="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+            Pulse Quantize
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom-Right: Live Strike Telemetry & Spectrum -->
+    <div class="pointer-events-auto glass-panel hidden w-72 flex-col gap-2.5 rounded-2xl p-3.5 sm:flex">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-medium uppercase tracking-widest text-slate-400">Recent Discharges</span>
+        <span class="text-[10px] text-slate-500">Click globe to strike</span>
+      </div>
+      <div id="telemetry-list" class="font-mono-tech flex flex-col gap-1.5 text-[11px]">
+        <div class="text-slate-500">Awaiting atmospheric activity…</div>
+      </div>
+      <canvas id="spectrum-canvas" width="240" height="34" class="mt-0.5 h-[34px] w-full rounded-lg bg-slate-950/60"></canvas>
+    </div>
+
+  </footer>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // =========================================================================
+      // 1. MUSICAL SCALES & CONSTANTS
+      // =========================================================================
+      const SCALES = {
+        pentatonic: [0, 3, 5, 7, 10],
+        dorian:     [0, 2, 3, 5, 7, 9, 10],
+        lydian:     [0, 2, 4, 6, 7, 9, 11],
+        hirajoshi:  [0, 2, 3, 7, 8],
+        quartal:    [0, 5, 7, 10, 14]
+      };
+
+      const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+      function midiToFreq(midi) {
+        return 440 * Math.pow(2, (midi - 69) / 12);
+      }
+
+      function midiToName(midi) {
+        const note = NOTE_NAMES[((midi % 12) + 12) % 12];
+        const octave = Math.floor(midi / 12) - 1;
+        return note + octave;
+      }
+
+      function latToMidi(lat, scaleKey, rootMidi) {
+        const intervals = SCALES[scaleKey] || SCALES.lydian;
+        // Map lat [-70, 70] -> index across 3.5 octaves
+        const clamped = Math.max(-70, Math.min(70, lat));
+        const norm = (clamped + 70) / 140;
+        const totalNotes = intervals.length * 3 + 2;
+        const idx = Math.min(totalNotes - 1, Math.max(0, Math.floor(norm * totalNotes)));
+        const octave = Math.floor(idx / intervals.length);
+        const degree = intervals[idx % intervals.length];
+        return rootMidi + octave * 12 + degree;
+      }
+
+      // =========================================================================
+      // 2. WEB AUDIO GENERATIVE ENGINE
+      // =========================================================================
+      class AmbientAudioEngine {
+        constructor() {
+          this.ctx = null;
+          this.enabled = false;
+          this.scale = 'lydian';
+          this.rootMidi = 50; // D3
+          this.reverbMix = 0.68;
+          this.droneLevel = 0.35;
+          this.thunderEnabled = true;
+          this.quantizeEnabled = false;
+          this.activeVoices = 0;
+          this.maxVoices = 16;
+
+          this.masterGain = null;
+          this.dryGain = null;
+          this.wetGain = null;
+          this.convolver = null;
+          this.analyser = null;
+          this.droneGain = null;
+          this.droneOscs = [];
+          this.noiseBuffer = null;
+        }
+
+        init() {
+          if (this.ctx) return;
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioCtx();
+
+          // Master chain: voices -> dry/wet -> lowpass -> compressor -> analyser -> out
+          this.compressor = this.ctx.createDynamicsCompressor();
+          this.compressor.threshold.value = -16;
+          this.compressor.knee.value = 18;
+          this.compressor.ratio.value = 4;
+          this.compressor.attack.value = 0.01;
+          this.compressor.release.value = 0.25;
+
+          this.warmFilter = this.ctx.createBiquadFilter();
+          this.warmFilter.type = 'lowpass';
+          this.warmFilter.frequency.value = 6800;
+          this.warmFilter.Q.value = 0.5;
+
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.value = 0.85;
+
+          this.analyser = this.ctx.createAnalyser();
+          this.analyser.fftSize = 64;
+          this.analyser.smoothingTimeConstant = 0.82;
+
+          this.dryGain = this.ctx.createGain();
+          this.wetGain = this.ctx.createGain();
+          this.updateReverbMix();
+
+          // Procedural 4.5s Stereo Hall Impulse Response
+          this.convolver = this.ctx.createConvolver();
+          this.convolver.buffer = this.createImpulseResponse(4.5, 2.8);
+
+          // Noise buffer for distant thunder swells
+          this.noiseBuffer = this.createNoiseBuffer(3.0);
+
+          this.dryGain.connect(this.warmFilter);
+          this.convolver.connect(this.wetGain);
+          this.wetGain.connect(this.warmFilter);
+
+          this.warmFilter.connect(this.compressor);
+          this.compressor.connect(this.masterGain);
+          this.masterGain.connect(this.analyser);
+          this.analyser.connect(this.ctx.destination);
+
+          this.initDrone();
+        }
+
+        createImpulseResponse(duration, decay) {
+          const rate = this.ctx.sampleRate;
+          const length = Math.floor(rate * duration);
+          const impulse = this.ctx.createBuffer(2, length, rate);
+          for (let ch = 0; ch < 2; ch++) {
+            const data = impulse.getChannelData(ch);
+            let lp = 0;
+            for (let i = 0; i < length; i++) {
+              const env = Math.pow(1 - i / length, decay);
+              const white = Math.random() * 2 - 1;
+              // Softly darken tail over time
+              lp = lp * 0.72 + white * 0.28;
+              data[i] = lp * env;
+            }
+          }
+          return impulse;
+        }
+
+        createNoiseBuffer(duration) {
+          const rate = this.ctx.sampleRate;
+          const length = Math.floor(rate * duration);
+          const buf = this.ctx.createBuffer(1, length, rate);
+          const data = buf.getChannelData(0);
+          let lastOut = 0;
+          for (let i = 0; i < length; i++) {
+            const white = Math.random() * 2 - 1;
+            lastOut = (lastOut + 0.03 * white) / 1.03;
+            data[i] = lastOut * 3.2;
+          }
+          return buf;
+        }
+
+        initDrone() {
+          this.droneGain = this.ctx.createGain();
+          this.droneGain.gain.value = 0;
+
+          const droneFilter = this.ctx.createBiquadFilter();
+          droneFilter.type = 'lowpass';
+          droneFilter.frequency.value = 380;
+          droneFilter.Q.value = 1.2;
+
+          // Slow LFO breathing on drone filter
+          const lfo = this.ctx.createOscillator();
+          const lfoGain = this.ctx.createGain();
+          lfo.frequency.value = 0.07;
+          lfoGain.gain.value = 160;
+          lfo.connect(lfoGain);
+          lfoGain.connect(droneFilter.frequency);
+          lfo.start();
+
+          this.droneGain.connect(droneFilter);
+          droneFilter.connect(this.convolver);
+          droneFilter.connect(this.dryGain);
+
+          const ratios = [0.5, 1, 1.5, 2]; // sub, root, fifth, octave
+          const baseFreq = midiToFreq(this.rootMidi);
+          ratios.forEach((ratio, i) => {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+            osc.frequency.value = baseFreq * ratio;
+            osc.detune.value = (i - 1.5) * 4.5;
+            g.gain.value = i === 0 ? 0.35 : 0.22;
+            osc.connect(g);
+            g.connect(this.droneGain);
+            osc.start();
+            this.droneOscs.push({ osc, ratio });
+          });
+
+          this.updateDroneLevel();
+        }
+
+        updateDronePitch() {
+          if (!this.ctx || !this.droneOscs.length) return;
+          const now = this.ctx.currentTime;
+          const baseFreq = midiToFreq(this.rootMidi);
+          this.droneOscs.forEach(({ osc, ratio }) => {
+            osc.frequency.setTargetAtTime(baseFreq * ratio, now, 0.8);
+          });
+        }
+
+        updateDroneLevel() {
+          if (!this.ctx || !this.droneGain) return;
+          const target = this.enabled ? this.droneLevel * 0.22 : 0;
+          this.droneGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.4);
+        }
+
+        updateReverbMix() {
+          if (!this.ctx || !this.dryGain || !this.wetGain) return;
+          const now = this.ctx.currentTime;
+          this.dryGain.gain.setTargetAtTime(1 - this.reverbMix * 0.55, now, 0.1);
+          this.wetGain.gain.setTargetAtTime(this.reverbMix * 1.15, now, 0.1);
+        }
+
+        async setEnabled(on) {
+          if (on) {
+            this.init();
+            if (this.ctx.state === 'suspended') {
+              await this.ctx.resume();
+            }
+            this.enabled = true;
+            this.masterGain.gain.setTargetAtTime(0.85, this.ctx.currentTime, 0.15);
+          } else {
+            this.enabled = false;
+            if (this.ctx) {
+              this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12);
+            }
+          }
+          this.updateDroneLevel();
+        }
+
+        triggerStrike(lat, lon, panValue, isStrong) {
+          const midi = latToMidi(lat, this.scale, this.rootMidi);
+          const noteName = midiToName(midi);
+
+          if (!this.enabled || !this.ctx || this.activeVoices >= this.maxVoices) {
+            return noteName;
+          }
+
+          let startTime = this.ctx.currentTime;
+          if (this.quantizeEnabled) {
+            // Quantize to soft 16th-note grid at 72 BPM (0.208s)
+            const grid = 0.20833;
+            startTime = Math.ceil(startTime / grid) * grid;
+          }
+
+          this.activeVoices++;
+          const freq = midiToFreq(midi);
+          const pan = Math.max(-0.92, Math.min(0.92, panValue));
+
+          const panner = this.ctx.createStereoPanner();
+          panner.pan.setValueAtTime(pan, startTime);
+          panner.connect(this.dryGain);
+          panner.connect(this.convolver);
+
+          // Gentle FM Bell / Rhodes Voice
+          const carrier = this.ctx.createOscillator();
+          const mod = this.ctx.createOscillator();
+          const modGain = this.ctx.createGain();
+          const env = this.ctx.createGain();
+
+          carrier.type = 'sine';
+          carrier.frequency.setValueAtTime(freq, startTime);
+
+          mod.type = 'sine';
+          mod.frequency.setValueAtTime(isStrong ? freq * 2.0 : freq * 3.0, startTime);
+
+          const modDepth = isStrong ? freq * 0.85 : freq * 0.45;
+          modGain.gain.setValueAtTime(modDepth, startTime);
+          modGain.gain.exponentialRampToValueAtTime(0.5, startTime + (isStrong ? 1.8 : 0.9));
+
+          const peak = isStrong ? 0.16 : 0.10;
+          const decay = isStrong ? 3.2 : 2.1;
+
+          env.gain.setValueAtTime(0.0001, startTime);
+          env.gain.linearRampToValueAtTime(peak, startTime + 0.018);
+          env.gain.exponentialRampToValueAtTime(0.0001, startTime + decay);
+
+          mod.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(env);
+          env.connect(panner);
+
+          carrier.start(startTime);
+          mod.start(startTime);
+          carrier.stop(startTime + decay + 0.05);
+          mod.stop(startTime + decay + 0.05);
+
+          carrier.onended = () => {
+            this.activeVoices = Math.max(0, this.activeVoices - 1);
+            panner.disconnect();
+          };
+
+          // Optional distant thunder swell on strong strikes
+          if (this.thunderEnabled && isStrong && this.noiseBuffer && Math.random() < 0.55) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = this.noiseBuffer;
+
+            const thunderFilter = this.ctx.createBiquadFilter();
+            thunderFilter.type = 'lowpass';
+            thunderFilter.frequency.setValueAtTime(140, startTime);
+            thunderFilter.frequency.exponentialRampToValueAtTime(48, startTime + 2.4);
+
+            const tEnv = this.ctx.createGain();
+            tEnv.gain.setValueAtTime(0.0001, startTime + 0.05);
+            tEnv.gain.linearRampToValueAtTime(0.18, startTime + 0.35);
+            tEnv.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.6);
+
+            noise.connect(thunderFilter);
+            thunderFilter.connect(tEnv);
+            tEnv.connect(panner);
+
+            noise.start(startTime + 0.04);
+            noise.stop(startTime + 2.7);
+          }
+
+          return noteName;
+        }
+      }
+
+      // =========================================================================
+      // 3. BLITZORTUNG WEBSOCKET CLIENT + CLIMATOLOGICAL SIMULATOR
+      // =========================================================================
+      function decodeBlitzortung(b) {
+        if (!b || typeof b !== 'string') return '';
+        const e = {};
+        const d = b.split('');
+        let c = d[0];
+        let f = c;
+        const g = [c];
+        let h = 256;
+        let o = h;
+        for (let i = 1; i < d.length; i++) {
+          let a = d[i].charCodeAt(0);
+          a = h > a ? d[i] : (e[a] ? e[a] : f + c);
+          g.push(a);
+          c = a.charAt(0);
+          e[o] = f + c;
+          o++;
+          f = a;
+        }
+        return g.join('');
+      }
+
+      const STORM_HOTSPOTS = [
+        { name: 'Congo Basin',         lat: -1.5,  lon: 22.0,   weight: 0.22 },
+        { name: 'Lake Maracaibo',      lat: 9.8,   lon: -71.6,  weight: 0.16 },
+        { name: 'Maritime Continent',  lat: -1.2,  lon: 112.5,  weight: 0.18 },
+        { name: 'Bay of Bengal',       lat: 16.5,  lon: 88.0,   weight: 0.12 },
+        { name: 'US Great Plains',     lat: 35.5,  lon: -97.5,  weight: 0.10 },
+        { name: 'Amazon Basin',        lat: -4.5,  lon: -62.0,  weight: 0.10 },
+        { name: 'Central Europe',      lat: 47.5,  lon: 11.5,   weight: 0.06 },
+        { name: 'Mediterranean',       lat: 38.0,  lon: 15.5,   weight: 0.06 }
+      ];
+
+      class LightningDataSource {
+        constructor(onStrike, onStatus) {
+          this.onStrike = onStrike;
+          this.onStatus = onStatus;
+          this.ws = null;
+          this.keepaliveTimer = null;
+          this.simTimer = null;
+          this.mode = 'auto'; // 'auto' | 'live' | 'sim' | 'surge'
+          this.wsHosts = [
+            'wss://ws1.blitzortung.org/',
+            'wss://ws7.blitzortung.org/',
+            'wss://ws8.blitzortung.org/'
+          ];
+          this.hostIdx = 0;
+          this.activeCells = this.seedStormCells();
+        }
+
+        seedStormCells() {
+          return STORM_HOTSPOTS.map(h => ({
+            ...h,
+            curLat: h.lat + (Math.random() - 0.5) * 4,
+            curLon: h.lon + (Math.random() - 0.5) * 5
+          }));
+        }
+
+        start() {
+          this.connectLive(true);
+        }
+
+        stopAll() {
+          if (this.ws) {
+            try { this.ws.close(); } catch (_) {}
+            this.ws = null;
+          }
+          if (this.keepaliveTimer) {
+            clearInterval(this.keepaliveTimer);
+            this.keepaliveTimer = null;
+          }
+          if (this.simTimer) {
+            clearTimeout(this.simTimer);
+            this.simTimer = null;
+          }
+        }
+
+        cycleMode() {
+          if (this.mode === 'live') {
+            this.setMode('sim');
+          } else if (this.mode === 'sim') {
+            this.setMode('surge');
+          } else {
+            this.setMode('live');
+          }
+        }
+
+        setMode(nextMode) {
+          this.stopAll();
+          this.mode = nextMode;
+          if (nextMode === 'live') {
+            this.connectLive(false);
+          } else if (nextMode === 'sim') {
+            this.onStatus('sim', 'Simulated Feed');
+            this.scheduleSimStrike(false);
+          } else if (nextMode === 'surge') {
+            this.onStatus('surge', 'Storm Surge');
+            this.scheduleSimStrike(true);
+          }
+        }
+
+        connectLive(allowAutoFallback) {
+          this.stopAll();
+          this.mode = 'live';
+          this.onStatus('connecting', 'Connecting Blitzortung…');
+
+          let settled = false;
+          const url = this.wsHosts[this.hostIdx % this.wsHosts.length];
+          this.hostIdx++;
+
+          const fallbackTimeout = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              if (this.ws) {
+                try { this.ws.close(); } catch (_) {}
+              }
+              if (allowAutoFallback) {
+                this.setMode('sim');
+              } else {
+                this.onStatus('sim', 'Simulated (WS Blocked)');
+                this.mode = 'sim';
+                this.scheduleSimStrike(false);
+              }
+            }
+          }, 4000);
+
+          try {
+            const ws = new WebSocket(url);
+            this.ws = ws;
+
+            ws.onopen = () => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(fallbackTimeout);
+              try {
+                ws.send(JSON.stringify({ a: 111 }));
+              } catch (_) {}
+              this.onStatus('live', 'Live Blitzortung');
+              this.keepaliveTimer = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                  try { ws.send(JSON.stringify({ a: 111 })); } catch (_) {}
+                }
+              }, 30000);
+            };
+
+            ws.onmessage = (evt) => {
+              try {
+                const raw = typeof evt.data === 'string' ? evt.data : '';
+                const decoded = decodeBlitzortung(raw);
+                const data = JSON.parse(decoded);
+                if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+                  this.onStrike({
+                    lat: data.lat,
+                    lon: data.lon,
+                    pol: data.pol || 0,
+                    stations: Array.isArray(data.sig) ? data.sig.length : 8,
+                    region: 'Blitzortung Live',
+                    source: 'live'
+                  });
+                }
+              } catch (_) {}
+            };
+
+            ws.onerror = () => {
+              if (!settled) {
+                settled = true;
+                clearTimeout(fallbackTimeout);
+                this.mode = 'sim';
+                this.onStatus('sim', 'Simulated Feed');
+                this.scheduleSimStrike(false);
+              }
+            };
+
+            ws.onclose = () => {
+              if (this.mode === 'live' && !settled) {
+                settled = true;
+                clearTimeout(fallbackTimeout);
+                this.mode = 'sim';
+                this.onStatus('sim', 'Simulated Feed');
+                this.scheduleSimStrike(false);
+              }
+            };
+          } catch (_) {
+            settled = true;
+            clearTimeout(fallbackTimeout);
+            this.mode = 'sim';
+            this.onStatus('sim', 'Simulated Feed');
+            this.scheduleSimStrike(false);
+          }
+        }
+
+        scheduleSimStrike(isSurge) {
+          const delay = isSurge
+            ? 140 + Math.random() * 260
+            : 450 + Math.random() * 1150;
+
+          this.simTimer = setTimeout(() => {
+            if (this.mode !== 'sim' && this.mode !== 'surge') return;
+            this.emitSimulatedStrike();
+            this.scheduleSimStrike(this.mode === 'surge');
+          }, delay);
+        }
+
+        emitSimulatedStrike() {
+          // Pick a weighted storm hotspot
+          let r = Math.random();
+          let cell = this.activeCells[0];
+          for (const c of this.activeCells) {
+            r -= c.weight;
+            if (r <= 0) {
+              cell = c;
+              break;
+            }
+          }
+          // Slowly drift storm cell
+          cell.curLat += (Math.random() - 0.5) * 0.25;
+          cell.curLon += (Math.random() - 0.5) * 0.35;
+
+          const lat = Math.max(-75, Math.min(75, cell.curLat + (Math.random() - 0.5) * 4.5));
+          const lon = ((cell.curLon + (Math.random() - 0.5) * 5.5 + 540) % 360) - 180;
+          const isStrong = Math.random() < 0.32;
+
+          this.onStrike({
+            lat,
+            lon,
+            pol: isStrong ? -1 : 1,
+            stations: isStrong ? 14 + Math.floor(Math.random() * 18) : 5 + Math.floor(Math.random() * 8),
+            region: cell.name,
+            source: 'sim'
+          });
+        }
+      }
+
+      // =========================================================================
+      // 4. MINIMALIST 3D GLOBE (THREE.JS)
+      // =========================================================================
+      const GLOBE_RADIUS = 10;
+
+      function latLonToVec3(lat, lon, radius = GLOBE_RADIUS) {
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (lon + 180) * (Math.PI / 180);
+        const x = -radius * Math.sin(phi) * Math.cos(theta);
+        const z = radius * Math.sin(phi) * Math.sin(theta);
+        const y = radius * Math.cos(phi);
+        return new THREE.Vector3(x, y, z);
+      }
+
+      function vec3ToLatLon(vec) {
+        const r = vec.length();
+        const lat = 90 - Math.acos(Math.max(-1, Math.min(1, vec.y / r))) * (180 / Math.PI);
+        const lon = ((Math.atan2(vec.z, -vec.x) * (180 / Math.PI)) - 180 + 540) % 360 - 180;
+        return { lat, lon };
+      }
+
+      class LightningGlobe {
+        constructor(container, onGlobeClick) {
+          this.container = container;
+          this.onGlobeClick = onGlobeClick;
+          this.autoRotate = true;
+          this.strikes = [];
+
+          this.scene = new THREE.Scene();
+          this.camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 200);
+          this.camera.position.set(0, 4, 28);
+
+          this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          this.renderer.setSize(container.clientWidth, container.clientHeight);
+          container.appendChild(this.renderer.domElement);
+
+          this.globeGroup = new THREE.Group();
+          this.scene.add(this.globeGroup);
+
+          this.buildStarfield();
+          this.buildSphere();
+          this.buildAtmosphere();
+          this.buildGraticule();
+          this.loadCoastlines();
+
+          this.raycaster = new THREE.Raycaster();
+          this.pointerDownPos = { x: 0, y: 0 };
+          this.isDragging = false;
+          this.lastPointer = { x: 0, y: 0 };
+          this.rotVel = { x: 0, y: 0 };
+
+          this.bindEvents();
+          this.animate();
+        }
+
+        buildStarfield() {
+          const count = 900;
+          const positions = new Float32Array(count * 3);
+          for (let i = 0; i < count; i++) {
+            const r = 60 + Math.random() * 60;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+            positions[i * 3 + 2] = r * Math.cos(phi);
+          }
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          const mat = new THREE.PointsMaterial({
+            color: 0x94a3b8,
+            size: 0.18,
+            transparent: true,
+            opacity: 0.45
+          });
+          this.scene.add(new THREE.Points(geo, mat));
+        }
+
+        buildSphere() {
+          const geo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x070b16
+          });
+          this.sphereMesh = new THREE.Mesh(geo, mat);
+          this.globeGroup.add(this.sphereMesh);
+        }
+
+        buildAtmosphere() {
+          const geo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.12, 64, 64);
+          const mat = new THREE.ShaderMaterial({
+            vertexShader: `
+              varying vec3 vNormal;
+              void main() {
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `,
+            fragmentShader: `
+              varying vec3 vNormal;
+              void main() {
+                float intensity = pow(0.64 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.2);
+                gl_FragColor = vec4(0.28, 0.62, 0.98, 1.0) * intensity * 0.65;
+              }
+            `,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
+            transparent: true,
+            depthWrite: false
+          });
+          this.scene.add(new THREE.Mesh(geo, mat));
+        }
+
+        buildGraticule() {
+          const pts = [];
+          const r = GLOBE_RADIUS * 1.001;
+          // Parallels every 30 deg
+          for (let lat = -60; lat <= 60; lat += 30) {
+            for (let lon = -180; lon < 180; lon += 6) {
+              pts.push(latLonToVec3(lat, lon, r), latLonToVec3(lat, lon + 6, r));
+            }
+          }
+          // Meridians every 30 deg
+          for (let lon = -180; lon < 180; lon += 30) {
+            for (let lat = -84; lat < 84; lat += 6) {
+              pts.push(latLonToVec3(lat, lon, r), latLonToVec3(lat + 6, lon, r));
+            }
+          }
+          const geo = new THREE.BufferGeometry().setFromPoints(pts);
+          const mat = new THREE.LineBasicMaterial({
+            color: 0x1e293b,
+            transparent: true,
+            opacity: 0.38
+          });
+          this.globeGroup.add(new THREE.LineSegments(geo, mat));
+        }
+
+        async loadCoastlines() {
+          try {
+            const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json');
+            if (!res.ok) return;
+            const topo = await res.json();
+            const mesh = window.topojson.mesh(topo, topo.objects.countries);
+            const pts = [];
+            const r = GLOBE_RADIUS * 1.004;
+
+            for (const line of mesh.coordinates) {
+              for (let i = 0; i < line.length - 1; i++) {
+                const [lon1, lat1] = line[i];
+                const [lon2, lat2] = line[i + 1];
+                pts.push(latLonToVec3(lat1, lon1, r), latLonToVec3(lat2, lon2, r));
+              }
+            }
+
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            const mat = new THREE.LineBasicMaterial({
+              color: 0x475569,
+              transparent: true,
+              opacity: 0.72
+            });
+            this.globeGroup.add(new THREE.LineSegments(geo, mat));
+          } catch (_) {
+            // Graticule remains clean if offline
+          }
+        }
+
+        getStereoPanForLon(lat, lon) {
+          const worldPos = latLonToVec3(lat, lon, GLOBE_RADIUS).applyQuaternion(this.globeGroup.quaternion);
+          // Project X relative to globe radius [-1, 1]
+          return Math.max(-1, Math.min(1, worldPos.x / GLOBE_RADIUS));
+        }
+
+        addStrike(lat, lon, isStrong) {
+          const normal = latLonToVec3(lat, lon, 1).normalize();
+          const surfacePos = normal.clone().multiplyScalar(GLOBE_RADIUS * 1.008);
+
+          // 1. Expanding Shockwave Ring
+          const ringGeo = new THREE.RingGeometry(0.08, 0.14, 32);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: isStrong ? 0xe0f2fe : 0x818cf8,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false
+          });
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.position.copy(surfacePos);
+          ring.lookAt(surfacePos.clone().add(normal));
+          this.globeGroup.add(ring);
+
+          // 2. Core Flash / Afterglow Ember
+          const dotGeo = new THREE.SphereGeometry(isStrong ? 0.14 : 0.09, 12, 12);
+          const dotMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 1.0
+          });
+          const dot = new THREE.Mesh(dotGeo, dotMat);
+          dot.position.copy(surfacePos);
+          this.globeGroup.add(dot);
+
+          // 3. Ionospheric Filament Beam
+          const beamEnd = normal.clone().multiplyScalar(GLOBE_RADIUS + (isStrong ? 1.5 : 0.85));
+          const beamGeo = new THREE.BufferGeometry().setFromPoints([surfacePos, beamEnd]);
+          const beamMat = new THREE.LineBasicMaterial({
+            color: isStrong ? 0x7dd3fc : 0xa5b4fc,
+            transparent: true,
+            opacity: 0.9
+          });
+          const beam = new THREE.Line(beamGeo, beamMat);
+          this.globeGroup.add(beam);
+
+          this.strikes.push({
+            ring,
+            ringMat,
+            dot,
+            dotMat,
+            beam,
+            beamMat,
+            isStrong,
+            age: 0,
+            maxAge: isStrong ? 14.0 : 9.0
+          });
+        }
+
+        bindEvents() {
+          const dom = this.renderer.domElement;
+
+          dom.addEventListener('pointerdown', (e) => {
+            this.isDragging = true;
+            this.pointerDownPos = { x: e.clientX, y: e.clientY };
+            this.lastPointer = { x: e.clientX, y: e.clientY };
+            this.rotVel = { x: 0, y: 0 };
+          });
+
+          window.addEventListener('pointermove', (e) => {
+            if (!this.isDragging) return;
+            const dx = e.clientX - this.lastPointer.x;
+            const dy = e.clientY - this.lastPointer.y;
+            this.lastPointer = { x: e.clientX, y: e.clientY };
+
+            this.globeGroup.rotation.y += dx * 0.0045;
+            this.globeGroup.rotation.x = Math.max(
+              -Math.PI / 2.2,
+              Math.min(Math.PI / 2.2, this.globeGroup.rotation.x + dy * 0.0045)
+            );
+            this.rotVel = { x: dy * 0.0015, y: dx * 0.0015 };
+          });
+
+          window.addEventListener('pointerup', (e) => {
+            if (!this.isDragging) return;
+            this.isDragging = false;
+            const dist = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
+            if (dist < 5) {
+              this.handleTap(e.clientX, e.clientY);
+            }
+          });
+
+          dom.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            this.camera.position.z = Math.max(15, Math.min(44, this.camera.position.z + e.deltaY * 0.015));
+          }, { passive: false });
+
+          window.addEventListener('resize', () => {
+            const w = this.container.clientWidth;
+            const h = this.container.clientHeight;
+            this.camera.aspect = w / h;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(w, h);
+          });
+        }
+
+        handleTap(clientX, clientY) {
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          const mouse = new THREE.Vector2(
+            ((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1
+          );
+          this.raycaster.setFromCamera(mouse, this.camera);
+          const hits = this.raycaster.intersectObject(this.sphereMesh);
+          if (hits.length > 0) {
+            const localPt = this.globeGroup.worldToLocal(hits[0].point.clone());
+            const { lat, lon } = vec3ToLatLon(localPt);
+            this.onGlobeClick(lat, lon);
+          }
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+
+          if (!this.isDragging) {
+            if (this.autoRotate) {
+              this.globeGroup.rotation.y += 0.0011;
+            }
+            this.globeGroup.rotation.y += this.rotVel.y;
+            this.globeGroup.rotation.x = Math.max(
+              -Math.PI / 2.2,
+              Math.min(Math.PI / 2.2, this.globeGroup.rotation.x + this.rotVel.x)
+            );
+            this.rotVel.x *= 0.93;
+            this.rotVel.y *= 0.93;
+          }
+
+          const dt = 0.016;
+          for (let i = this.strikes.length - 1; i >= 0; i--) {
+            const s = this.strikes[i];
+            s.age += dt;
+            const t = s.age / s.maxAge;
+
+            // Shockwave expands quickly in first 1.8s
+            const ringScale = 1 + Math.min(1, s.age / 1.8) * (s.isStrong ? 9.5 : 6.0);
+            s.ring.scale.setScalar(ringScale);
+            s.ringMat.opacity = Math.max(0, 0.92 * (1 - s.age / 1.8));
+
+            // Beam fades in 0.45s
+            s.beamMat.opacity = Math.max(0, 0.9 * (1 - s.age / 0.45));
+            if (s.age > 0.5 && s.beam.visible) {
+              s.beam.visible = false;
+            }
+
+            // Ember cools from white -> cyan/violet -> fade out
+            if (s.age < 0.25) {
+              s.dotMat.color.setHex(0xffffff);
+            } else if (s.age < 2.0) {
+              s.dotMat.color.setHex(s.isStrong ? 0x38bdf8 : 0x818cf8);
+            } else {
+              s.dotMat.color.setHex(0x4f46e5);
+            }
+            s.dotMat.opacity = Math.max(0, 1 - Math.pow(t, 0.7));
+
+            if (s.age >= s.maxAge) {
+              this.globeGroup.remove(s.ring, s.dot, s.beam);
+              s.ring.geometry.dispose();
+              s.ringMat.dispose();
+              s.dot.geometry.dispose();
+              s.dotMat.dispose();
+              s.beam.geometry.dispose();
+              s.beamMat.dispose();
+              this.strikes.splice(i, 1);
+            }
+          }
+
+          this.renderer.render(this.scene, this.camera);
+        }
+      }
+
+      // =========================================================================
+      // 5. APP WIRING & UI STATE
+      // =========================================================================
+      const audio = new AmbientAudioEngine();
+      let totalStrikes = 0;
+      const strikeTimestamps = [];
+      const recentStrikes = [];
+
+      const elTotal = document.getElementById('stat-total');
+      const elRate = document.getElementById('stat-rate');
+      const elLastNote = document.getElementById('stat-last-note');
+      const elStatusDot = document.getElementById('status-dot');
+      const elStatusLabel = document.getElementById('status-label');
+      const elTelemetry = document.getElementById('telemetry-list');
+      const elOverlay = document.getElementById('audio-start-overlay');
+      const elAudioToggle = document.getElementById('btn-audio-toggle');
+      const elAudioOff = document.getElementById('audio-icon-off');
+      const elAudioOn = document.getElementById('audio-icon-on');
+
+      const globe = new LightningGlobe(
+        document.getElementById('globe-container'),
+        (lat, lon) => {
+          handleIncomingStrike({
+            lat,
+            lon,
+            pol: -1,
+            stations: 16,
+            region: 'Manual Discharge',
+            source: 'manual'
+          });
+        }
+      );
+
+      function formatCoord(lat, lon) {
+        const ns = lat >= 0 ? 'N' : 'S';
+        const ew = lon >= 0 ? 'E' : 'W';
+        return `${Math.abs(lat).toFixed(1)}°${ns} ${Math.abs(lon).toFixed(1)}°${ew}`;
+      }
+
+      function handleIncomingStrike(strike) {
+        totalStrikes++;
+        const now = Date.now();
+        strikeTimestamps.push(now);
+
+        const isStrong = strike.pol < 0 || strike.stations >= 12;
+        globe.addStrike(strike.lat, strike.lon, isStrong);
+
+        const pan = globe.getStereoPanForLon(strike.lat, strike.lon);
+        const noteName = audio.triggerStrike(strike.lat, strike.lon, pan, isStrong);
+
+        elTotal.textContent = totalStrikes.toLocaleString();
+        elLastNote.textContent = noteName;
+
+        recentStrikes.unshift({
+          coord: formatCoord(strike.lat, strike.lon),
+          region: strike.region,
+          note: noteName,
+          isStrong
+        });
+        if (recentStrikes.length > 5) recentStrikes.pop();
+
+        elTelemetry.innerHTML = recentStrikes.map(item => `
+          <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-900/55 px-2.5 py-1">
+            <div class="truncate text-slate-300">
+              <span class="${item.isStrong ? 'text-sky-300' : 'text-indigo-300'}">⚡</span>
+              <span class="ml-1">${item.coord}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[10px] text-slate-500">${item.region}</span>
+              <span class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-sky-200">${item.note}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Update strikes/min rate every second
+      setInterval(() => {
+        const cutoff = Date.now() - 60000;
+        while (strikeTimestamps.length && strikeTimestamps[0] < cutoff) {
+          strikeTimestamps.shift();
+        }
+        elRate.textContent = strikeTimestamps.length;
+      }, 1000);
+
+      const dataSource = new LightningDataSource(handleIncomingStrike, (state, label) => {
+        elStatusLabel.textContent = label;
+        elStatusDot.className = 'status-pulse relative h-2 w-2 rounded-full ' + (
+          state === 'live'
+            ? 'bg-emerald-400 text-emerald-400'
+            : state === 'surge'
+              ? 'bg-fuchsia-400 text-fuchsia-400'
+              : state === 'connecting'
+                ? 'bg-amber-400 text-amber-400'
+                : 'bg-sky-400 text-sky-400'
+        );
+      });
+
+      function syncAudioButton(isOn) {
+        elAudioToggle.setAttribute('aria-pressed', String(isOn));
+        if (isOn) {
+          elAudioOff.classList.add('hidden');
+          elAudioOn.classList.remove('hidden');
+          elAudioOn.classList.add('flex');
+          elAudioToggle.classList.add('border-sky-400/40');
+        } else {
+          elAudioOn.classList.add('hidden');
+          elAudioOn.classList.remove('flex');
+          elAudioOff.classList.remove('hidden');
+          elAudioToggle.classList.remove('border-sky-400/40');
+        }
+      }
+
+      function dismissOverlay() {
+        elOverlay.classList.add('opacity-0', 'pointer-events-none');
+        setTimeout(() => elOverlay.remove(), 500);
+      }
+
+      document.getElementById('btn-enter-audio').addEventListener('click', async () => {
+        await audio.setEnabled(true);
+        syncAudioButton(true);
+        dismissOverlay();
+      });
+
+      document.getElementById('btn-enter-silent').addEventListener('click', () => {
+        syncAudioButton(false);
+        dismissOverlay();
+      });
+
+      elAudioToggle.addEventListener('click', async () => {
+        const next = !audio.enabled;
+        await audio.setEnabled(next);
+        syncAudioButton(next);
+      });
+
+      document.getElementById('btn-source-mode').addEventListener('click', () => {
+        dataSource.cycleMode();
+      });
+
+      document.getElementById('btn-auto-rotate').addEventListener('click', (e) => {
+        globe.autoRotate = !globe.autoRotate;
+        const btn = e.currentTarget;
+        btn.setAttribute('aria-pressed', String(globe.autoRotate));
+        btn.classList.toggle('text-sky-300', globe.autoRotate);
+        btn.classList.toggle('text-slate-400', !globe.autoRotate);
+      });
+
+      document.getElementById('btn-storm-burst').addEventListener('click', () => {
+        const centerLat = (Math.random() - 0.5) * 80;
+        const centerLon = (Math.random() - 0.5) * 300;
+        for (let i = 0; i < 6; i++) {
+          setTimeout(() => {
+            handleIncomingStrike({
+              lat: centerLat + (Math.random() - 0.5) * 8,
+              lon: centerLon + (Math.random() - 0.5) * 10,
+              pol: i % 2 === 0 ? -1 : 1,
+              stations: 15,
+              region: 'Storm Burst',
+              source: 'burst'
+            });
+          }, i * 160);
+        }
+      });
+
+      // Synth Panel Controls
+      const elSynthBody = document.getElementById('synth-panel-body');
+      document.getElementById('btn-toggle-synth').addEventListener('click', (e) => {
+        const hidden = elSynthBody.classList.toggle('hidden');
+        e.currentTarget.textContent = hidden ? 'Show' : 'Hide';
+      });
+
+      document.getElementById('select-scale').addEventListener('change', (e) => {
+        audio.scale = e.target.value;
+      });
+
+      document.getElementById('select-root').addEventListener('change', (e) => {
+        audio.rootMidi = parseInt(e.target.value, 10);
+        audio.updateDronePitch();
+      });
+
+      document.getElementById('slider-reverb').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        document.getElementById('val-reverb').textContent = `${val}%`;
+        audio.reverbMix = val / 100;
+        audio.updateReverbMix();
+      });
+
+      document.getElementById('slider-drone').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        document.getElementById('val-drone').textContent = `${val}%`;
+        audio.droneLevel = val / 100;
+        audio.updateDroneLevel();
+      });
+
+      document.getElementById('btn-thunder').addEventListener('click', (e) => {
+        audio.thunderEnabled = !audio.thunderEnabled;
+        const btn = e.currentTarget;
+        btn.setAttribute('aria-pressed', String(audio.thunderEnabled));
+        btn.className = audio.thunderEnabled
+          ? 'flex items-center gap-1.5 rounded-lg border border-sky-400/35 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200 transition hover:bg-sky-500/20'
+          : 'flex items-center gap-1.5 rounded-lg border border-slate-700/70 bg-slate-900/60 px-2.5 py-1 text-[11px] text-slate-400 transition hover:text-slate-200';
+        btn.querySelector('span').className = audio.thunderEnabled
+          ? 'h-1.5 w-1.5 rounded-full bg-sky-300'
+          : 'h-1.5 w-1.5 rounded-full bg-slate-500';
+      });
+
+      document.getElementById('btn-quantize').addEventListener('click', (e) => {
+        audio.quantizeEnabled = !audio.quantizeEnabled;
+        const btn = e.currentTarget;
+        btn.setAttribute('aria-pressed', String(audio.quantizeEnabled));
+        btn.className = audio.quantizeEnabled
+          ? 'flex items-center gap-1.5 rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1 text-[11px] text-indigo-200 transition hover:bg-indigo-500/25'
+          : 'flex items-center gap-1.5 rounded-lg border border-slate-700/70 bg-slate-900/60 px-2.5 py-1 text-[11px] text-slate-400 transition hover:text-slate-200';
+        btn.querySelector('span').className = audio.quantizeEnabled
+          ? 'h-1.5 w-1.5 rounded-full bg-indigo-300'
+          : 'h-1.5 w-1.5 rounded-full bg-slate-500';
+      });
+
+      // Audio Spectrum Visualizer
+      const specCanvas = document.getElementById('spectrum-canvas');
+      const specCtx = specCanvas.getContext('2d');
+      const freqData = new Uint8Array(32);
+
+      function drawSpectrum() {
+        requestAnimationFrame(drawSpectrum);
+        specCtx.clearRect(0, 0, specCanvas.width, specCanvas.height);
+
+        if (audio.analyser && audio.enabled) {
+          audio.analyser.getByteFrequencyData(freqData);
+        } else {
+          freqData.fill(0);
+        }
+
+        const bars = 24;
+        const barW = specCanvas.width / bars;
+        for (let i = 0; i < bars; i++) {
+          const v = freqData[i] / 255;
+          const h = Math.max(2, v * (specCanvas.height - 6));
+          specCtx.fillStyle = v > 0.45 ? 'rgba(125, 211, 252, 0.85)' : 'rgba(129, 140, 248, 0.45)';
+          specCtx.fillRect(i * barW + 2, specCanvas.height - h - 2, barW - 4, h);
+        }
+      }
+      drawSpectrum();
+
+      // Start Blitzortung connection (auto-falls back gracefully if blocked)
+      dataSource.start();
+    })();
+  </script>
+</body>
+</html>
